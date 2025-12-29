@@ -23,7 +23,7 @@ const REQUEST_CACHE = new Map<string, { data: any, ts: number }>();
 const CACHE_TTL = 2000; // 2 seconds (aggressive for realtime feel)
 
 const fetchWithRetry = async (path: string, skipCache = false): Promise<any> => {
-  const cacheKey = path;
+  const cacheKey = path; // Cache based on logical path (without timestamp)
   
   if (!skipCache) {
     const cached = REQUEST_CACHE.get(cacheKey);
@@ -39,7 +39,11 @@ const fetchWithRetry = async (path: string, skipCache = false): Promise<any> => 
     const index = (currentProxyIndex + i) % PROXIES.length;
     const proxy = PROXIES[index];
     
-    const targetUrl = `https://${getRandomDomain()}/${path}`;
+    // Add cache buster at the network level, not logical level
+    const separator = path.includes('?') ? '&' : '?';
+    const pathWithBuster = `${path}${separator}_t=${Date.now()}`;
+    const targetUrl = `https://${getRandomDomain()}/${pathWithBuster}`;
+    
     const url = `${proxy.url}${encodeURIComponent(targetUrl)}`;
     
     try {
@@ -119,9 +123,8 @@ export const fetchStockData = async (symbol: string, range: TimeRange = '1d'): P
   };
   const interval = intervalMap[range] || '1d';
 
-  // LOGIC FROM REFERENCE: Add _t={Date.now()} to bust cache
-  const t = Date.now();
-  const path = `v8/finance/chart/${validSymbol}?interval=${interval}&range=${range}&_t=${t}`;
+  // Do NOT add _t here, let fetchWithRetry handle it for proper caching
+  const path = `v8/finance/chart/${validSymbol}?interval=${interval}&range=${range}`;
   
   const data = await fetchWithRetry(path);
   
@@ -170,12 +173,10 @@ export const fetchQuotes = async (symbols: string[]): Promise<Record<string, Sto
 
 export const fetchQuote = async (symbol: string): Promise<StockQuote> => {
   const validSymbol = validateSymbol(symbol);
-  const t = Date.now();
-
+  
   // LOGIC FROM REFERENCE FOR FAST LIVE QUOTE
   // Uses v8 chart endpoint with 1m interval and useYfid=true
-  // This is faster and lighter than the full history fetch
-  const path = `v8/finance/chart/${validSymbol}?interval=1m&range=1d&useYfid=true&_t=${t}`;
+  const path = `v8/finance/chart/${validSymbol}?interval=1m&range=1d&useYfid=true`;
   
   try {
     const data = await fetchWithRetry(path);
